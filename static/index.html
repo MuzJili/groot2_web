@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Groot2 Web</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark"></span>
+          <div>
+            <h1>Groot2 Web</h1>
+            <p id="connectionText">未连接</p>
+          </div>
+        </div>
+        <form id="connectForm" class="connect-form">
+          <label>
+            <span>IP</span>
+            <input id="hostInput" name="host" value="127.0.0.1" autocomplete="off" />
+          </label>
+          <label>
+            <span>端口</span>
+            <input id="portInput" name="port" value="1667" inputmode="numeric" />
+          </label>
+          <label class="interval-field">
+            <span>轮询</span>
+            <select id="intervalInput">
+              <option value="250">250 ms</option>
+              <option value="500" selected>500 ms</option>
+              <option value="1000">1 s</option>
+            </select>
+          </label>
+          <button type="submit" class="primary">连接</button>
+          <button type="button" id="demoButton">示例</button>
+          <button type="button" id="disconnectButton" class="danger" disabled>关闭</button>
+        </form>
+      </header>
+
+      <main class="workspace">
+        <section class="viewer">
+          <div class="viewer-head">
+            <div class="status-strip" id="statusStrip"></div>
+            <div class="tabs" role="tablist">
+              <button id="treeTab" class="active" type="button">视图</button>
+              <button id="xmlTab" type="button">XML</button>
+            </div>
+          </div>
+          <div id="treePane" class="tree-pane">
+            <div id="emptyState" class="empty-state">
+              <strong>等待行为树</strong>
+              <span>连接 `combat_sentry_behavior_server` 的 `groot2_port`。</span>
+            </div>
+            <div id="treeCanvas" class="tree-canvas" hidden>
+              <svg id="edgeLayer" class="edge-layer"></svg>
+              <div id="nodeLayer" class="node-layer"></div>
+            </div>
+          </div>
+          <pre id="xmlPane" class="xml-pane" hidden></pre>
+        </section>
+
+        <aside class="inspector">
+          <section class="panel">
+            <h2>节点详情</h2>
+            <div id="nodeDetails" class="details muted">未选择节点</div>
+          </section>
+          <section class="panel">
+            <h2>运行事件</h2>
+            <div id="eventLog" class="event-log muted">暂无状态变化</div>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
