@@ -4,13 +4,17 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Groot2 Web</title>
+    <link rel="icon" href="./assets/groot2-web-icon.png" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <div class="shell">
+      <div class="wordmark" aria-hidden="true">
+        <span>G</span><span>R</span><span>O</span><span>O</span><span>T</span><span>2</span>
+      </div>
       <header class="topbar">
         <div class="brand">
-          <span class="brand-mark"></span>
+          <img class="brand-mark" src="./assets/groot2-web-icon.png" alt="" />
           <div>
             <h1>Groot2 Web</h1>
             <p id="connectionText">未连接</p>
@@ -35,8 +39,13 @@
           </label>
           <button type="submit" class="primary">连接</button>
           <button type="button" id="demoButton">示例</button>
+          <button type="button" id="settingsButton">设置</button>
           <button type="button" id="disconnectButton" class="danger" disabled>关闭</button>
         </form>
+        <div class="telemetry-readout" aria-hidden="true">
+          <span>BT.CPP / ZMQ</span>
+          <strong>LIVE</strong>
+        </div>
       </header>
 
       <main class="workspace">
@@ -67,11 +76,71 @@
             <div id="nodeDetails" class="details muted">未选择节点</div>
           </section>
           <section class="panel">
-            <h2>运行事件</h2>
+            <div class="panel-head">
+              <h2>黑板</h2>
+              <div class="panel-actions">
+                <button id="blackboardOpenButton" type="button" disabled>全部</button>
+                <button id="blackboardRefreshButton" type="button" disabled>刷新</button>
+              </div>
+            </div>
+            <div id="blackboardView" class="blackboard-view muted">未连接黑板</div>
+          </section>
+          <section class="panel">
+            <div class="panel-head">
+              <h2>运行事件</h2>
+              <button
+                id="eventToggleButton"
+                class="icon-button"
+                type="button"
+                aria-label="展开运行事件"
+                aria-expanded="false"
+              >▸</button>
+            </div>
             <div id="eventLog" class="event-log muted">暂无状态变化</div>
           </section>
         </aside>
       </main>
+    </div>
+
+    <div id="settingsOverlay" class="settings-overlay" hidden>
+      <section class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+        <div class="settings-head">
+          <h2 id="settingsTitle">设置</h2>
+          <button id="settingsCloseButton" type="button" aria-label="关闭设置">×</button>
+        </div>
+        <form id="settingsForm" class="settings-form">
+          <label>
+            <span>运行事件长度</span>
+            <input id="settingsEventLimit" type="number" min="1" max="200" step="1" />
+          </label>
+          <label>
+            <span>请求超时</span>
+            <input id="settingsTimeoutMs" type="number" min="100" max="10000" step="100" />
+          </label>
+          <label class="checkbox-field">
+            <input id="settingsAutoBlackboard" type="checkbox" />
+            <span>自动刷新黑板</span>
+          </label>
+          <div class="settings-actions">
+            <button id="settingsCancelButton" type="button">取消</button>
+            <button type="submit" class="primary">保存</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div id="blackboardOverlay" class="blackboard-overlay" hidden>
+      <section class="blackboard-panel" role="dialog" aria-modal="true" aria-labelledby="blackboardTitle">
+        <div class="settings-head">
+          <h2 id="blackboardTitle">黑板值</h2>
+          <button id="blackboardCloseButton" type="button" aria-label="关闭黑板值">×</button>
+        </div>
+        <div class="blackboard-toolbar">
+          <button id="blackboardModalRefreshButton" type="button" disabled>刷新</button>
+          <button id="blackboardClearPinnedButton" type="button">清空主页显示</button>
+        </div>
+        <div id="blackboardPicker" class="blackboard-picker muted">未连接黑板</div>
+      </section>
     </div>
 
     <script src="./app.js"></script>

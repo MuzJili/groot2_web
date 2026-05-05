@@ -4,8 +4,17 @@ const LEVEL_GAP = 138;
 const LEAF_GAP = 250;
 const MARGIN_X = 34;
 const MARGIN_Y = 28;
+const SETTINGS_STORAGE_KEY = "groot2_web_settings";
+const PINNED_BLACKBOARD_STORAGE_KEY = "groot2_web_pinned_blackboard_keys";
+const COLLAPSED_EVENT_LIMIT = 3;
+const DEFAULT_SETTINGS = {
+  eventLimit: 24,
+  timeoutMs: 1200,
+  autoBlackboard: true,
+};
 
 const state = {
+  settings: loadSettings(),
   host: "127.0.0.1",
   port: "1667",
   demo: false,
@@ -14,10 +23,16 @@ const state = {
   nodes: [],
   nodeByUid: new Map(),
   statusByUid: new Map(),
+  blackboardNames: [],
+  blackboards: {},
+  blackboardError: "",
+  pinnedBlackboardKeys: loadPinnedBlackboardKeys(),
   events: [],
+  eventsExpanded: false,
   selectedUid: null,
   pollTimer: null,
   polling: false,
+  pollInFlight: false,
 };
 
 const els = {
@@ -26,6 +41,7 @@ const els = {
   port: document.querySelector("#portInput"),
   interval: document.querySelector("#intervalInput"),
   demo: document.querySelector("#demoButton"),
+  settingsButton: document.querySelector("#settingsButton"),
   disconnect: document.querySelector("#disconnectButton"),
   connectionText: document.querySelector("#connectionText"),
   statusStrip: document.querySelector("#statusStrip"),
@@ -38,7 +54,23 @@ const els = {
   treePane: document.querySelector("#treePane"),
   xmlPane: document.querySelector("#xmlPane"),
   details: document.querySelector("#nodeDetails"),
+  blackboard: document.querySelector("#blackboardView"),
+  blackboardOpen: document.querySelector("#blackboardOpenButton"),
+  blackboardRefresh: document.querySelector("#blackboardRefreshButton"),
+  blackboardModalRefresh: document.querySelector("#blackboardModalRefreshButton"),
+  blackboardOverlay: document.querySelector("#blackboardOverlay"),
+  blackboardClose: document.querySelector("#blackboardCloseButton"),
+  blackboardClearPinned: document.querySelector("#blackboardClearPinnedButton"),
+  blackboardPicker: document.querySelector("#blackboardPicker"),
   eventLog: document.querySelector("#eventLog"),
+  eventToggle: document.querySelector("#eventToggleButton"),
+  settingsOverlay: document.querySelector("#settingsOverlay"),
+  settingsForm: document.querySelector("#settingsForm"),
+  settingsClose: document.querySelector("#settingsCloseButton"),
+  settingsCancel: document.querySelector("#settingsCancelButton"),
+  settingsEventLimit: document.querySelector("#settingsEventLimit"),
+  settingsTimeoutMs: document.querySelector("#settingsTimeoutMs"),
+  settingsAutoBlackboard: document.querySelector("#settingsAutoBlackboard"),
 };
 
 const statusLabel = {
@@ -54,6 +86,67 @@ const statusLabel = {
 
 function slugStatus(status) {
   return String(status || "IDLE").toLowerCase().replaceAll("_", "-");
+}
+
+function clampNumber(value, min, max, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, Math.round(number)));
+}
+
+function normalizeSettings(settings = {}) {
+  return {
+    eventLimit: clampNumber(
+      settings.eventLimit,
+      1,
+      200,
+      DEFAULT_SETTINGS.eventLimit,
+    ),
+    timeoutMs: clampNumber(settings.timeoutMs, 100, 10000, DEFAULT_SETTINGS.timeoutMs),
+    autoBlackboard: settings.autoBlackboard !== false,
+  };
+}
+
+function loadSettings() {
+  try {
+    const stored = localStorage.getItem(SETTINGS_STORAGE_KEY);
+    return normalizeSettings(stored ? JSON.parse(stored) : DEFAULT_SETTINGS);
+  } catch {
+    return { ...DEFAULT_SETTINGS };
+  }
+}
+
+function saveSettings() {
+  try {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(state.settings));
+  } catch {
+    // Ignore storage failures; settings still work for the current page.
+  }
+}
+
+function loadPinnedBlackboardKeys() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(PINNED_BLACKBOARD_STORAGE_KEY) || "[]");
+    if (!Array.isArray(stored)) {
+      return new Set();
+    }
+    return new Set(stored.filter((item) => typeof item === "string"));
+  } catch {
+    return new Set();
+  }
+}
+
+function savePinnedBlackboardKeys() {
+  try {
+    localStorage.setItem(
+      PINNED_BLACKBOARD_STORAGE_KEY,
+      JSON.stringify(Array.from(state.pinnedBlackboardKeys)),
+    );
+  } catch {
+    // Ignore storage failures; pinned values still work for the current page.
+  }
 }
 
 function elementChildren(el) {
@@ -94,7 +187,7 @@ function buildTreeFromElement(el, parent = null, index = 0) {
     syntheticId: `${parent ? parent.syntheticId : "root"}-${index}`,
     tag: el.tagName,
     name: el.getAttribute("name") || el.getAttribute("ID") || el.tagName,
-    path: el.getAttribute("_fullPath") || "",
+    path: el.getAttribute("_fullPath") || el.getAttribute("_fullpath") || "",
     attrs: attrsOf(el),
     parent,
     children: [],
@@ -159,19 +252,43 @@ function parseXml(xmlText) {
   return rootNode;
 }
 
-function apiUrl(path) {
+function extractBlackboardNames(xmlText) {
+  const doc = new DOMParser().parseFromString(xmlText, "application/xml");
+  const parseError = doc.querySelector("parsererror");
+  if (parseError) {
+    return [];
+  }
+  const names = [];
+  Array.from(doc.querySelectorAll("BehaviorTree")).forEach((tree) => {
+    const fullpath = tree.getAttribute("_fullpath") || tree.getAttribute("_fullPath") || "";
+    const fallback = tree.getAttribute("ID") || "";
+    const name = (fullpath || fallback).trim();
+    if (name && !names.includes(name)) {
+      names.push(name);
+    }
+  });
+  return names;
+}
+
+function apiUrl(path, extraParams = {}) {
   const params = new URLSearchParams({
     host: state.demo ? "demo" : state.host,
     port: state.port,
+    timeout_ms: state.settings.timeoutMs,
   });
   if (state.demo) {
     params.set("demo", "1");
   }
+  Object.entries(extraParams).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      params.set(key, String(value));
+    }
+  });
   return `${path}?${params.toString()}`;
 }
 
-async function fetchJson(path) {
-  const response = await fetch(apiUrl(path), { cache: "no-store" });
+async function fetchJson(path, extraParams = {}) {
+  const response = await fetch(apiUrl(path, extraParams), { cache: "no-store" });
   const payload = await response.json();
   if (!payload.ok) {
     throw new Error(payload.error || "请求失败");
@@ -194,13 +311,15 @@ async function connect() {
   state.nodeByUid = new Map(
     state.nodes.filter((node) => node.uid !== null).map((node) => [node.uid, node]),
   );
+  state.blackboardNames = extractBlackboardNames(payload.xml);
   els.xmlPane.textContent = state.xml;
   renderTree();
   renderDetails();
   renderEvents();
+  renderBlackboards();
   setConnection(`${state.demo ? "demo" : state.host}:${state.port}`);
   updateDisconnectButton(true);
-  await pollStatus();
+  await pollRuntimeData();
   startPolling();
 }
 
@@ -210,6 +329,7 @@ function setConnection(text) {
 
 function stopPolling() {
   state.polling = false;
+  state.pollInFlight = false;
   if (state.pollTimer) {
     clearInterval(state.pollTimer);
     state.pollTimer = null;
@@ -223,6 +343,9 @@ function clearTreeState() {
   state.nodes = [];
   state.nodeByUid = new Map();
   state.statusByUid = new Map();
+  state.blackboardNames = [];
+  state.blackboards = {};
+  state.blackboardError = "";
   state.events = [];
   state.selectedUid = null;
   els.xmlPane.textContent = "";
@@ -231,6 +354,7 @@ function clearTreeState() {
   renderTree();
   renderDetails();
   renderEvents();
+  renderBlackboards();
   renderStatusStrip();
 }
 
@@ -250,12 +374,31 @@ function disconnect() {
 function updateDisconnectButton(enabled) {
   els.disconnect.disabled = !enabled;
   els.disconnect.textContent = state.demo ? "关闭示例" : "断开";
+  els.blackboardRefresh.disabled = !enabled;
+  els.blackboardOpen.disabled = !enabled;
+  els.blackboardModalRefresh.disabled = !enabled;
 }
 
 function startPolling() {
   stopPolling();
   state.polling = true;
-  state.pollTimer = setInterval(pollStatus, Number(els.interval.value));
+  state.pollTimer = setInterval(pollRuntimeData, Number(els.interval.value));
+}
+
+async function pollRuntimeData() {
+  if (state.pollInFlight) {
+    return;
+  }
+  state.pollInFlight = true;
+  try {
+    const tasks = [pollStatus()];
+    if (state.settings.autoBlackboard) {
+      tasks.push(pollBlackboards());
+    }
+    await Promise.allSettled(tasks);
+  } finally {
+    state.pollInFlight = false;
+  }
 }
 
 async function pollStatus() {
@@ -277,6 +420,27 @@ async function pollStatus() {
   }
 }
 
+async function pollBlackboards() {
+  if (!state.tree) {
+    return;
+  }
+  if (!state.blackboardNames.length) {
+    state.blackboardError = "没有可请求的黑板名";
+    renderBlackboards();
+    return;
+  }
+  try {
+    const payload = await fetchJson("/api/blackboard", {
+      blackboards: state.blackboardNames.join(";"),
+    });
+    state.blackboards = payload.blackboards || {};
+    state.blackboardError = "";
+  } catch (error) {
+    state.blackboardError = error.message;
+  }
+  renderBlackboards();
+}
+
 function recordStatusChanges(next) {
   next.forEach((status, uid) => {
     const prev = state.statusByUid.get(uid);
@@ -291,8 +455,54 @@ function recordStatusChanges(next) {
       });
     }
   });
-  state.events = state.events.slice(0, 80);
+  state.events = state.events.slice(0, state.settings.eventLimit);
   renderEvents();
+}
+
+function openSettings() {
+  els.settingsEventLimit.value = String(state.settings.eventLimit);
+  els.settingsTimeoutMs.value = String(state.settings.timeoutMs);
+  els.settingsAutoBlackboard.checked = state.settings.autoBlackboard;
+  els.settingsOverlay.hidden = false;
+  els.settingsEventLimit.focus();
+}
+
+function closeSettings() {
+  els.settingsOverlay.hidden = true;
+}
+
+function openBlackboardPanel() {
+  renderBlackboardPicker();
+  els.blackboardOverlay.hidden = false;
+  els.blackboardClose.focus();
+}
+
+function closeBlackboardPanel() {
+  els.blackboardOverlay.hidden = true;
+}
+
+function applySettingsFromForm() {
+  state.settings = normalizeSettings({
+    eventLimit: els.settingsEventLimit.value,
+    timeoutMs: els.settingsTimeoutMs.value,
+    autoBlackboard: els.settingsAutoBlackboard.checked,
+  });
+  saveSettings();
+  state.events = state.events.slice(0, state.settings.eventLimit);
+  renderEvents();
+  closeSettings();
+  if (state.tree && state.settings.autoBlackboard) {
+    pollBlackboards();
+  }
+}
+
+function clearSelectedNode() {
+  if (state.selectedUid === null) {
+    return;
+  }
+  state.selectedUid = null;
+  updateRenderedStatuses();
+  renderDetails();
 }
 
 function renderTree() {
@@ -335,7 +545,8 @@ function renderTree() {
       <span class="node-meta">${escapeHtml(node.tag)}${node.uid !== null ? ` · uid ${node.uid}` : ""}</span>
       <span class="node-status">${escapeHtml(statusLabel[getStatus(node)] || getStatus(node))}</span>
     `;
-    el.addEventListener("click", () => {
+    el.addEventListener("click", (event) => {
+      event.stopPropagation();
       state.selectedUid = node.uid ?? node.syntheticId;
       updateRenderedStatuses();
       renderDetails(node);
@@ -435,19 +646,185 @@ function renderDetails(node = null) {
     ["子节点", String(node.children.length)],
   ];
   node.attrs
-    .filter((attr) => !["_uid", "_fullPath"].includes(attr.name))
+    .filter((attr) => !["_uid", "_fullPath", "_fullpath"].includes(attr.name))
     .forEach((attr) => rows.push([attr.name, attr.value]));
   els.details.innerHTML = rows.map(([key, value]) => kv(key, value)).join("");
 }
 
+function renderBlackboards() {
+  renderBlackboardPicker();
+
+  if (!state.tree) {
+    els.blackboard.classList.add("muted");
+    els.blackboard.textContent = "未连接黑板";
+    return;
+  }
+
+  if (state.blackboardError) {
+    els.blackboard.classList.remove("muted");
+    els.blackboard.innerHTML = `
+      <div class="blackboard-error">${escapeHtml(state.blackboardError)}</div>
+      ${renderBlackboardNames()}
+    `;
+    return;
+  }
+
+  const pairs = getBlackboardPairs();
+  if (!pairs.length) {
+    els.blackboard.classList.add("muted");
+    els.blackboard.innerHTML =
+      "没有可导出的值。复杂类型需要在行为树进程中注册 JsonExporter。";
+    return;
+  }
+
+  const pinnedPairs = pairs.filter((pair) => state.pinnedBlackboardKeys.has(pair.id));
+  if (!pinnedPairs.length) {
+    els.blackboard.classList.add("muted");
+    els.blackboard.textContent = "未选择主页显示项。点击“全部”选择键值对。";
+    return;
+  }
+
+  els.blackboard.classList.remove("muted");
+  els.blackboard.innerHTML = pinnedPairs
+    .map((pair) => renderPinnedBlackboardPair(pair))
+    .join("");
+}
+
+function getBlackboardPairs() {
+  const pairs = [];
+  Object.keys(state.blackboards)
+    .sort()
+    .forEach((boardName) => {
+      const values = state.blackboards[boardName];
+      if (!values || typeof values !== "object" || Array.isArray(values)) {
+        return;
+      }
+      Object.entries(values)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .forEach(([key, value]) => {
+          pairs.push({
+            id: blackboardPairId(boardName, key),
+            boardName,
+            key,
+            value,
+          });
+        });
+    });
+  return pairs;
+}
+
+function blackboardPairId(boardName, key) {
+  return JSON.stringify([boardName, key]);
+}
+
+function renderBlackboardPicker() {
+  if (!state.tree) {
+    els.blackboardPicker.classList.add("muted");
+    els.blackboardPicker.textContent = "未连接黑板";
+    return;
+  }
+
+  if (state.blackboardError) {
+    els.blackboardPicker.classList.remove("muted");
+    els.blackboardPicker.innerHTML = `
+      <div class="blackboard-error">${escapeHtml(state.blackboardError)}</div>
+      ${renderBlackboardNames()}
+    `;
+    return;
+  }
+
+  const pairs = getBlackboardPairs();
+  if (!pairs.length) {
+    els.blackboardPicker.classList.add("muted");
+    els.blackboardPicker.innerHTML =
+      "没有可导出的值。复杂类型需要在行为树进程中注册 JsonExporter。";
+    return;
+  }
+
+  els.blackboardPicker.classList.remove("muted");
+  els.blackboardPicker.innerHTML = pairs.map((pair) => renderBlackboardPickerRow(pair)).join("");
+}
+
+function renderBlackboardNames() {
+  if (!state.blackboardNames.length) {
+    return "";
+  }
+  return `
+    <div class="blackboard-names">
+      ${state.blackboardNames.map((name) => `<code>${escapeHtml(name)}</code>`).join("")}
+    </div>
+  `;
+}
+
+function renderPinnedBlackboardPair(pair) {
+  return `
+    <div class="blackboard-pin">
+      <div class="blackboard-pin-head">
+        <strong>${escapeHtml(pair.key)}</strong>
+        <span>${escapeHtml(pair.boardName)}</span>
+      </div>
+      ${renderBlackboardValue(pair.value, "compact")}
+    </div>
+  `;
+}
+
+function renderBlackboardPickerRow(pair) {
+  const checked = state.pinnedBlackboardKeys.has(pair.id) ? "checked" : "";
+  return `
+    <div class="blackboard-row">
+      <input
+        type="checkbox"
+        aria-label="主页显示 ${escapeHtml(pair.key)}"
+        data-pair-id="${escapeHtml(pair.id)}"
+        ${checked}
+      />
+      <span class="blackboard-row-meta">
+        <strong>${escapeHtml(pair.key)}</strong>
+        <small>${escapeHtml(pair.boardName)}</small>
+      </span>
+      <div class="blackboard-row-value">${renderBlackboardValue(pair.value, "inline")}</div>
+    </div>
+  `;
+}
+
+function renderBlackboardValue(value, mode = "") {
+  const scalar = value === null || ["string", "number", "boolean"].includes(typeof value);
+  if (scalar) {
+    return `<code class="blackboard-value">${escapeHtml(formatBlackboardScalar(value))}</code>`;
+  }
+  return `<pre class="blackboard-json ${escapeHtml(mode)}">${escapeHtml(
+    JSON.stringify(value, null, 2),
+  )}</pre>`;
+}
+
+function formatBlackboardScalar(value) {
+  if (value === null) {
+    return "null";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  return JSON.stringify(value);
+}
+
 function renderEvents() {
+  els.eventToggle.textContent = state.eventsExpanded ? "▾" : "▸";
+  els.eventToggle.setAttribute("aria-expanded", String(state.eventsExpanded));
+  els.eventToggle.setAttribute(
+    "aria-label",
+    state.eventsExpanded ? "收起运行事件" : "展开运行事件",
+  );
+  els.eventLog.classList.toggle("expanded", state.eventsExpanded);
+
   if (!state.events.length) {
     els.eventLog.classList.add("muted");
     els.eventLog.textContent = "暂无状态变化";
     return;
   }
   els.eventLog.classList.remove("muted");
+  const limit = state.eventsExpanded ? state.settings.eventLimit : COLLAPSED_EVENT_LIMIT;
   els.eventLog.innerHTML = state.events
+    .slice(0, limit)
     .map(
       (event) => `
         <div class="event-item">
@@ -496,6 +873,84 @@ els.demo.addEventListener("click", () => {
 });
 
 els.disconnect.addEventListener("click", disconnect);
+
+els.settingsButton.addEventListener("click", openSettings);
+
+els.settingsClose.addEventListener("click", closeSettings);
+
+els.settingsCancel.addEventListener("click", closeSettings);
+
+els.settingsOverlay.addEventListener("click", (event) => {
+  if (event.target === els.settingsOverlay) {
+    closeSettings();
+  }
+});
+
+els.blackboardOverlay.addEventListener("click", (event) => {
+  if (event.target === els.blackboardOverlay) {
+    closeBlackboardPanel();
+  }
+});
+
+els.settingsForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  applySettingsFromForm();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !els.settingsOverlay.hidden) {
+    closeSettings();
+  } else if (event.key === "Escape" && !els.blackboardOverlay.hidden) {
+    closeBlackboardPanel();
+  }
+});
+
+els.blackboardOpen.addEventListener("click", openBlackboardPanel);
+
+els.blackboardClose.addEventListener("click", closeBlackboardPanel);
+
+els.blackboardRefresh.addEventListener("click", () => {
+  pollBlackboards();
+});
+
+els.blackboardModalRefresh.addEventListener("click", () => {
+  pollBlackboards();
+});
+
+els.blackboardClearPinned.addEventListener("click", () => {
+  state.pinnedBlackboardKeys.clear();
+  savePinnedBlackboardKeys();
+  renderBlackboards();
+});
+
+els.blackboardPicker.addEventListener("change", (event) => {
+  const input = event.target.closest("input[data-pair-id]");
+  if (!input) {
+    return;
+  }
+  const pairId = input.dataset.pairId;
+  if (!pairId) {
+    return;
+  }
+  if (input.checked) {
+    state.pinnedBlackboardKeys.add(pairId);
+  } else {
+    state.pinnedBlackboardKeys.delete(pairId);
+  }
+  savePinnedBlackboardKeys();
+  renderBlackboards();
+});
+
+els.eventToggle.addEventListener("click", () => {
+  state.eventsExpanded = !state.eventsExpanded;
+  renderEvents();
+});
+
+els.treePane.addEventListener("click", (event) => {
+  if (!event.target.closest(".bt-node")) {
+    clearSelectedNode();
+  }
+});
 
 els.interval.addEventListener("change", () => {
   if (state.polling) {

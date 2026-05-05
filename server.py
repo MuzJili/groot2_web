@@ -26,10 +26,16 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - exercised on machines without pyzmq
     zmq = None  # type: ignore
 
+try:
+    import msgpack  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover - exercised on machines without msgpack
+    msgpack = None  # type: ignore
+
 
 PROTOCOL_ID = 2
 REQUEST_FULLTREE = ord("T")
 REQUEST_STATUS = ord("S")
+REQUEST_BLACKBOARD = ord("B")
 
 STATUS_NAMES = {
     0: "IDLE",
@@ -69,6 +75,16 @@ DEMO_STATUSES = [
     {1: 2, 2: 12, 3: 12, 4: 12, 5: 12, 6: 2, 7: 12, 8: 2},
     {1: 11, 2: 12, 3: 12, 4: 12, 5: 12, 6: 12, 7: 12, 8: 12},
 ]
+
+DEMO_BLACKBOARDS = {
+    "rmul_2026_no_attack": {
+        "attack_pose": {"x": 2.4, "y": -1.1, "yaw": 1.57},
+        "referee_gameStatus": {"game_progress": 4, "stage_remain_time": 256},
+        "referee_rfidStatus": {"base_buff": True, "outpost_buff": False},
+        "target_mode": 1,
+        "nav2_goal_pose": "2.40;-1.10;1.57",
+    }
+}
 
 
 class Groot2Error(RuntimeError):
@@ -114,6 +130,21 @@ def _parse_status_buffer(data: bytes) -> list[dict[str, Any]]:
     return statuses
 
 
+def _decode_blackboard_payload(data: bytes) -> dict[str, Any]:
+    if msgpack is None:
+        raise Groot2Error(
+            "Python dependency msgpack is missing. Install it with: "
+            "python3 -m pip install -r groot2_web/requirements.txt"
+        )
+    try:
+        payload = msgpack.unpackb(data, raw=False, strict_map_key=False)  # type: ignore[union-attr]
+    except Exception as exc:  # noqa: BLE001 - msgpack exception classes vary by version
+        raise Groot2Error(f"failed to decode Groot2 blackboard msgpack: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise Groot2Error("Groot2 blackboard reply is not a map")
+    return payload
+
+
 class Groot2Client:
     def __init__(self, host: str, port: int, timeout_ms: int) -> None:
         if zmq is None:
@@ -124,7 +155,9 @@ class Groot2Client:
         self._address = f"tcp://{host}:{port}"
         self._timeout_ms = timeout_ms
 
-    def request(self, request_type: int) -> tuple[dict[str, Any], bytes]:
+    def request(
+        self, request_type: int, extra_parts: list[str | bytes] | None = None
+    ) -> tuple[dict[str, Any], bytes]:
         context = zmq.Context.instance()  # type: ignore[union-attr]
         socket_obj = context.socket(zmq.REQ)  # type: ignore[union-attr]
         socket_obj.setsockopt(zmq.LINGER, 0)  # type: ignore[union-attr]
@@ -132,7 +165,10 @@ class Groot2Client:
         socket_obj.setsockopt(zmq.SNDTIMEO, self._timeout_ms)  # type: ignore[union-attr]
         try:
             socket_obj.connect(self._address)
-            socket_obj.send_multipart([_request_header(request_type)])
+            request_parts = [_request_header(request_type)]
+            for part in extra_parts or []:
+                request_parts.append(part if isinstance(part, bytes) else part.encode("utf-8"))
+            socket_obj.send_multipart(request_parts)
             parts = socket_obj.recv_multipart()
         except Exception as exc:  # noqa: BLE001 - pyzmq exception classes vary by version
             raise Groot2Error(f"failed to request {self._address}: {exc}") from exc
@@ -175,6 +211,24 @@ def _target_from_query(query: dict[str, list[str]]) -> tuple[str, int, bool]:
     return host, port, False
 
 
+def _blackboard_names_from_query(query: dict[str, list[str]]) -> list[str]:
+    raw_values: list[str] = []
+    raw_values.extend(query.get("blackboards", []))
+    raw_values.extend(query.get("blackboard", []))
+
+    names: list[str] = []
+    seen: set[str] = set()
+    for raw_value in raw_values:
+        for item in raw_value.replace(",", ";").split(";"):
+            name = item.strip()
+            if name and name not in seen:
+                if len(name) > 512:
+                    raise ValueError("blackboard name is too long")
+                names.append(name)
+                seen.add(name)
+    return names
+
+
 def _demo_statuses() -> list[dict[str, Any]]:
     frame = DEMO_STATUSES[int(time.time() * 2) % len(DEMO_STATUSES)]
     return [
@@ -185,6 +239,11 @@ def _demo_statuses() -> list[dict[str, Any]]:
         }
         for uid, status in frame.items()
     ]
+
+
+def _demo_blackboards(names: list[str]) -> dict[str, Any]:
+    selected = names or list(DEMO_BLACKBOARDS.keys())
+    return {name: DEMO_BLACKBOARDS.get(name, {}) for name in selected}
 
 
 class Groot2WebHandler(SimpleHTTPRequestHandler):
@@ -224,6 +283,7 @@ class Groot2WebHandler(SimpleHTTPRequestHandler):
                     {
                         "ok": True,
                         "pyzmq": zmq is not None,
+                        "msgpack": msgpack is not None,
                         "static_dir": str(STATIC_DIR),
                     }
                 )
@@ -276,6 +336,35 @@ class Groot2WebHandler(SimpleHTTPRequestHandler):
                 )
                 return
 
+            if path == "/api/blackboard":
+                blackboard_names = _blackboard_names_from_query(query)
+                if demo:
+                    self._send_json(
+                        {
+                            "ok": True,
+                            "target": {"host": host, "port": port, "demo": True},
+                            "reply": {"tree_uuid": "demo"},
+                            "blackboards": _demo_blackboards(blackboard_names),
+                            "requested": blackboard_names,
+                        }
+                    )
+                    return
+                if not blackboard_names:
+                    raise ValueError("blackboards query parameter is required")
+                reply, payload = Groot2Client(host, port, timeout_ms).request(
+                    REQUEST_BLACKBOARD, [";".join(blackboard_names)]
+                )
+                self._send_json(
+                    {
+                        "ok": True,
+                        "target": {"host": host, "port": port, "demo": False},
+                        "reply": reply,
+                        "blackboards": _decode_blackboard_payload(payload),
+                        "requested": blackboard_names,
+                    }
+                )
+                return
+
             self._send_json({"ok": False, "error": "unknown API route"}, HTTPStatus.NOT_FOUND)
         except (Groot2Error, OSError, ValueError, socket.error) as exc:
             self._send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_GATEWAY)
@@ -294,6 +383,12 @@ def main() -> int:
         print(
             "Warning: pyzmq is not installed. The page can open, but real Groot2 "
             "connections need python3-zmq or pyzmq.",
+            file=sys.stderr,
+        )
+    if msgpack is None:
+        print(
+            "Warning: msgpack is not installed. Tree and status can work, but "
+            "blackboard viewing needs the msgpack Python package.",
             file=sys.stderr,
         )
     try:

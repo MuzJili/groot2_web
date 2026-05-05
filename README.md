@@ -22,10 +22,11 @@ BT::Groot2Publisher
 - 行为树结构
 - 节点状态：`IDLE`、`RUNNING`、`SUCCESS`、`FAILURE`、`SKIPPED`
 - 节点详情
+- 黑板值
 - 状态变化记录
 - 原始 XML
 
-当前只做查看，不做控制。也就是说，它不会修改黑板、不会插入断点、不会控制行为树执行。
+当前只做查看，不做控制。也就是说，它可以读取黑板，但不会修改黑板、不会插入断点、不会控制行为树执行。
 
 ## 目录结构
 
@@ -58,7 +59,7 @@ auto publisher = std::make_shared<BT::Groot2Publisher>(tree, 1667);
 
 ### 2. Python 端
 
-需要 Python 3 和 `pyzmq`。
+需要 Python 3、`pyzmq` 和 `msgpack`。
 
 安装依赖：
 
@@ -70,7 +71,7 @@ python3 -m pip install -r groot2_web/requirements.txt
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y python3-zmq
+sudo apt-get install -y python3-zmq python3-msgpack
 ```
 
 ## 本地启动
@@ -108,6 +109,22 @@ IP: 127.0.0.1
 
 如果行为树程序运行在另一台机器上，就填写那台机器的 IP 和 Groot2 端口。
 
+连接成功后，网页会自动读取当前 XML 中所有 `BehaviorTree` 对应的黑板，并在右侧
+`黑板` 面板中显示。`刷新` 按钮可以手动重新读取一次，轮询间隔也会影响黑板自动刷新频率。
+
+注意：Groot2 只能导出 BehaviorTree.CPP 已经能转换为 JSON 的黑板值。基础类型通常可以直接显示；
+自定义类型或 ROS message 需要在行为树进程中注册 `BT::JsonExporter` 转换器，否则这些值可能不会出现在黑板面板里。
+
+## 设置
+
+点击顶部的 `设置` 按钮，可以调整网页运行参数：
+
+- `运行事件长度`：右侧运行事件最多保留多少条。
+- `请求超时`：每次向 Groot2Publisher 请求数据的超时时间，单位是毫秒。
+- `自动刷新黑板`：开启后黑板会跟随状态轮询自动刷新；关闭后只在手动点击 `刷新` 时读取黑板。
+
+设置会保存在当前浏览器里，刷新页面后仍然生效。
+
 ## 示例模式
 
 点击网页上的 `示例` 按钮，可以不连接真实行为树，直接查看内置 demo tree。
@@ -124,6 +141,7 @@ IP: 127.0.0.1
 ```python
 DEMO_XML = ...
 DEMO_STATUSES = ...
+DEMO_BLACKBOARDS = ...
 ```
 
 点击 `关闭示例` 可以停止示例轮询并清空页面。
@@ -167,11 +185,20 @@ GET /api/fulltree?host=127.0.0.1&port=1667
 GET /api/status?host=127.0.0.1&port=1667
 ```
 
+### 获取黑板值
+
+```text
+GET /api/blackboard?host=127.0.0.1&port=1667&blackboards=MainTree;SubTreeName
+```
+
+`blackboards` 是要读取的黑板名列表，多个名字用分号分隔。网页会从行为树 XML 中自动推导这些名字。
+
 ### 示例接口
 
 ```text
 GET /api/fulltree?demo=1
 GET /api/status?demo=1
+GET /api/blackboard?demo=1
 ```
 
 ## 常见问题
@@ -186,7 +213,7 @@ GET /api/status?demo=1
 nc -vz 127.0.0.1 1667
 ```
 
-### 提示缺少 `zmq`
+### 提示缺少 `zmq` 或 `msgpack`
 
 如果看到：
 
@@ -194,11 +221,24 @@ nc -vz 127.0.0.1 1667
 ModuleNotFoundError: No module named 'zmq'
 ```
 
-说明缺少 `pyzmq`。安装：
+或：
+
+```text
+ModuleNotFoundError: No module named 'msgpack'
+```
+
+说明缺少 Python 依赖。安装：
 
 ```bash
 python3 -m pip install -r groot2_web/requirements.txt
 ```
+
+### 黑板面板为空
+
+先确认行为树已经运行，并且网页连接到了正确的 Groot2 端口。
+
+如果树和节点状态都正常，但黑板为空，通常说明当前黑板值没有可用的 JSON 导出方式。
+BehaviorTree.CPP 的 Groot2 黑板接口依赖 `BT::JsonExporter`，复杂类型需要在 C++ 进程中注册转换器。
 
 ### 8765 端口被占用
 

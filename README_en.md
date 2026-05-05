@@ -25,11 +25,12 @@ The web page can show:
 - Tree structure
 - Node statuses: `IDLE`, `RUNNING`, `SUCCESS`, `FAILURE`, `SKIPPED`
 - Node details
+- Blackboard values
 - Recent status changes
 - Raw XML
 
-This tool is read-only. It does not edit blackboards, insert breakpoints, or
-control tree execution.
+This tool is read-only. It can read blackboards, but it does not edit
+blackboards, insert breakpoints, or control tree execution.
 
 ## Directory Layout
 
@@ -63,7 +64,7 @@ created yet, the web page may not connect.
 
 ### Python Side
 
-Python 3 and `pyzmq` are required.
+Python 3, `pyzmq`, and `msgpack` are required.
 
 Install dependencies:
 
@@ -75,7 +76,7 @@ On Ubuntu, you can also use:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y python3-zmq
+sudo apt-get install -y python3-zmq python3-msgpack
 ```
 
 ## Start Locally
@@ -114,6 +115,28 @@ Port: 1667
 If the behavior tree program runs on another machine, enter that machine's IP
 and Groot2 port.
 
+After a successful connection, the web page automatically reads all blackboards
+associated with the `BehaviorTree` elements in the current XML. Values are shown
+in the `Blackboard` panel. The `Refresh` button reads them again manually, and
+the polling interval also controls automatic blackboard refreshes.
+
+Note: Groot2 can only export blackboard values that BehaviorTree.CPP can convert
+to JSON. Basic types usually work out of the box. Custom types or ROS messages
+need `BT::JsonExporter` converters registered in the C++ process, otherwise they
+may not appear in the blackboard panel.
+
+## Settings
+
+Click `Settings` in the top bar to adjust page runtime parameters:
+
+- `Event history length`: maximum number of runtime events kept in the right panel.
+- `Request timeout`: timeout in milliseconds for each Groot2Publisher request.
+- `Auto refresh blackboard`: when enabled, blackboard values refresh with the
+  status polling loop; when disabled, blackboards are read only when `Refresh`
+  is clicked manually.
+
+Settings are saved in the current browser and survive page refreshes.
+
 ## Demo Mode
 
 Click `Demo` in the web page to load a built-in demo tree without connecting to
@@ -131,6 +154,7 @@ Demo data is defined in [server.py](server.py):
 ```python
 DEMO_XML = ...
 DEMO_STATUSES = ...
+DEMO_BLACKBOARDS = ...
 ```
 
 Click `Close Demo` to stop demo polling and clear the page.
@@ -176,11 +200,21 @@ GET /api/fulltree?host=127.0.0.1&port=1667
 GET /api/status?host=127.0.0.1&port=1667
 ```
 
+### Fetch Blackboard Values
+
+```text
+GET /api/blackboard?host=127.0.0.1&port=1667&blackboards=MainTree;SubTreeName
+```
+
+`blackboards` is a semicolon-separated list of blackboard names. The web page
+derives these names from the behavior tree XML automatically.
+
 ### Demo Endpoints
 
 ```text
 GET /api/fulltree?demo=1
 GET /api/status?demo=1
+GET /api/blackboard?demo=1
 ```
 
 ## Troubleshooting
@@ -196,7 +230,7 @@ You can also check whether the port is reachable:
 nc -vz 127.0.0.1 1667
 ```
 
-### Missing `zmq`
+### Missing `zmq` or `msgpack`
 
 If you see:
 
@@ -204,11 +238,27 @@ If you see:
 ModuleNotFoundError: No module named 'zmq'
 ```
 
-Install `pyzmq`:
+or:
+
+```text
+ModuleNotFoundError: No module named 'msgpack'
+```
+
+Install the Python dependencies:
 
 ```bash
 python3 -m pip install -r groot2_web/requirements.txt
 ```
+
+### The Blackboard Panel Is Empty
+
+First make sure the behavior tree is running and the page is connected to the
+correct Groot2 port.
+
+If the tree and node statuses work but the blackboard is empty, the blackboard
+values may not have JSON exporters. BehaviorTree.CPP's Groot2 blackboard API
+depends on `BT::JsonExporter`; complex types need converters registered in the
+C++ process.
 
 ### Port 8765 Is Already in Use
 
