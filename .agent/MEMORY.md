@@ -283,3 +283,58 @@ decisions, verification, and remaining risk.
   - Passed `git diff --check`.
   - Passed targeted privacy scan over `groot2_web`, including hidden `.agent/`
     files and excluding `.git/`.
+
+## 2026-05-06 - Blackboard Split View And Polling Input
+
+- Intent: make the blackboard easier to inspect by adding a magnified split
+  view with the behavior tree, allow vertical scrolling in the blackboard list,
+  and change polling from presets to a millisecond input.
+- Files changed:
+  - `static/index.html`
+  - `static/app.js`
+  - `static/styles.css`
+  - `.agent/TODO.md`
+  - `.agent/KNOWLEDGE.md`
+  - `.agent/MEMORY.md`
+- Decisions:
+  - Replaced the polling `<select>` with a numeric input plus an inline `ms`
+    unit label.
+  - Clamped polling intervals to 50-60000 ms before restarting the timer.
+  - Added `#blackboardExpandButton` next to `全部` in the blackboard panel
+    header.
+  - Added a `body.blackboard-expanded` layout state that hides node details and
+    runtime events, splits the workspace into equal tree and blackboard columns,
+    and renders all exported blackboard pairs instead of only pinned pairs.
+  - Added vertical scrolling to the blackboard panel itself so long value lists
+    no longer push past the available page area.
+- Verification:
+  - Passed `node --check` for `groot2_web/static/app.js`.
+  - Passed Python compile check for `groot2_web/server.py`.
+  - Started `python3 -B server.py --bind 127.0.0.1 --port 8765`.
+  - Verified `/api/health` responds on `127.0.0.1:8765`.
+  - Verified the served HTML contains `#blackboardExpandButton` and the
+    `number-with-unit` polling input.
+  - Verified the served JS and CSS contain the new split-view and polling-input
+    code paths.
+  - Browser-level screenshot verification was not run because Playwright is not
+    installed in the local Node environment.
+
+## 2026-05-07 - Record Groot2 Web Feature Roadmap
+
+- Intent: capture the maintainer's preferred staged roadmap for upcoming
+  `groot2_web` features.
+- Files changed:
+  - `.agent/TODO.md`
+  - `.agent/MEMORY.md`
+- Decisions:
+  - First batch: timeline replay, active path and failure-chain highlighting,
+    and search/focus/subtree-collapse workflow.
+  - Second batch: blackboard diff/watch and connection diagnostic assistant.
+  - Third batch: tactical HUD, minimap, failure heatmap, and story-style
+    runtime log.
+  - Kept the roadmap in `.agent/TODO.md` instead of changing public README
+    files because this is planning state, not release documentation yet.
+- Verification:
+  - Passed `git diff --check` for `.agent/TODO.md` and `.agent/MEMORY.md`.
+  - No runtime verification was run because this was a documentation-only
+    planning update.

@@ -60,6 +60,12 @@ BT::Groot2Publisher
 - The sidebar blackboard panel only shows user-pinned key/value pairs. The
   `全部` button opens the full blackboard value picker, and pinned pair IDs are
   stored in browser `localStorage` under `groot2_web_pinned_blackboard_keys`.
+- The sidebar blackboard panel has a magnify button next to `全部`. When active,
+  the main workspace becomes a tree/blackboard split view with equal columns,
+  the blackboard side shows all exported pairs, and the blackboard list itself
+  scrolls vertically.
+- The topbar polling control is a numeric input in milliseconds. The frontend
+  clamps it to 50-60000 ms before restarting the runtime polling timer.
 - Runtime events are collapsed to the latest 3 items by default. The triangle
   button expands the event log to the configured event history length, with the
   panel itself scrollable.

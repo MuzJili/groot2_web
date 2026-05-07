@@ -172,16 +172,33 @@ select:focus {
   box-shadow: 0 0 0 3px rgba(47, 156, 149, 0.18);
 }
 
+.number-with-unit {
+  position: relative;
+  display: block;
+  width: 116px;
+}
+
+.number-with-unit input {
+  width: 100%;
+  padding-right: 38px;
+}
+
+.number-with-unit > span {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  font-size: 10px;
+  pointer-events: none;
+}
+
 #hostInput {
   width: 164px;
 }
 
 #portInput {
   width: 88px;
-}
-
-.interval-field select {
-  width: 102px;
 }
 
 button {
@@ -357,6 +374,10 @@ button.active {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(350px, 410px);
   gap: 14px;
+}
+
+body.blackboard-expanded .workspace {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
 .viewer {
@@ -626,12 +647,28 @@ button.active {
   gap: 14px;
 }
 
+body.blackboard-expanded .inspector {
+  overflow: hidden;
+  display: block;
+}
+
+body.blackboard-expanded .node-details-panel,
+body.blackboard-expanded .event-panel {
+  display: none;
+}
+
 .panel {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
   overflow: hidden;
   box-shadow: 0 20px 52px rgba(0, 0, 0, 0.22);
+}
+
+body.blackboard-expanded .blackboard-section {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .panel > h2,
@@ -714,7 +751,18 @@ button.active {
 
 .blackboard-view {
   display: grid;
+  align-content: start;
   gap: 10px;
+  min-height: 0;
+  max-height: clamp(190px, 34vh, 380px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+body.blackboard-expanded .blackboard-view {
+  max-height: none;
+  height: 100%;
+  padding: 14px;
 }
 
 .blackboard-toolbar {
@@ -807,8 +855,22 @@ button.active {
   border-bottom: 1px solid var(--line-faint);
 }
 
+.blackboard-pin.expanded {
+  grid-template-columns: minmax(150px, 0.38fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line-faint);
+  border-radius: 7px;
+  background: rgba(17, 18, 15, 0.62);
+}
+
 .blackboard-pin:last-child {
   border-bottom: 0;
+}
+
+.blackboard-pin.expanded:last-child {
+  border-bottom: 1px solid var(--line-faint);
 }
 
 .blackboard-pin-head {
@@ -848,6 +910,10 @@ button.active {
 
 .blackboard-json.inline {
   max-height: 180px;
+}
+
+.blackboard-json.expanded {
+  max-height: none;
 }
 
 .blackboard-empty {
@@ -927,6 +993,11 @@ button.active {
     grid-template-rows: minmax(520px, 1fr) auto;
   }
 
+  body.blackboard-expanded .workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(460px, 52vh) minmax(420px, 48vh);
+  }
+
   .inspector {
     max-height: 520px;
   }
@@ -937,6 +1008,10 @@ button.active {
 
   .blackboard-row-value {
     grid-column: 2;
+  }
+
+  .blackboard-pin.expanded {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -949,7 +1024,7 @@ button.active {
 
   #hostInput,
   #portInput,
-  .interval-field select {
+  .number-with-unit {
     width: 100%;
   }
 

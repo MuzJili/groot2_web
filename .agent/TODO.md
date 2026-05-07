@@ -31,6 +31,9 @@
 - Replaced the top-left brand mark with the generated minimal sci-fi icon.
 - Added tree empty-space deselection, a full blackboard value picker with
   pinned homepage values, and expandable scrollable runtime events.
+- Added a millisecond polling interval input, scrollable sidebar blackboard
+  values, and a blackboard split-view mode that gives the tree and blackboard
+  equal workspace columns.
 
 ## Open Items
 
@@ -43,7 +46,30 @@
   pattern when the behavior tree only listens on container-local loopback.
 - Keep `.agent/MEMORY.md` updated after every future modification.
 
+## Planned Roadmap
+
+### First Batch
+
+- Timeline replay.
+- Active path and failure-chain highlighting.
+- Search, focus, and subtree collapse.
+
+### Second Batch
+
+- Blackboard diff/watch.
+- Connection diagnostic assistant.
+
+### Third Batch
+
+- Tactical HUD.
+- Minimap.
+- Failure heatmap.
+- Story-style runtime log.
+
 ## Last Sync
 
-- 2026-05-05: added blackboard picker, event expansion, and empty-space
-  deselection.
+- 2026-05-07: recorded the staged feature roadmap for timeline replay,
+  active-path/failure highlighting, search/focus/collapse, blackboard
+  diff/watch, diagnostics, tactical HUD, minimap, failure heatmap, and
+  story-style logs.
+- 2026-05-06: added polling interval input and blackboard split-view scrolling.

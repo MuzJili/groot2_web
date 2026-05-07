@@ -7,6 +7,9 @@ const MARGIN_Y = 28;
 const SETTINGS_STORAGE_KEY = "groot2_web_settings";
 const PINNED_BLACKBOARD_STORAGE_KEY = "groot2_web_pinned_blackboard_keys";
 const COLLAPSED_EVENT_LIMIT = 3;
+const DEFAULT_POLL_INTERVAL_MS = 500;
+const MIN_POLL_INTERVAL_MS = 50;
+const MAX_POLL_INTERVAL_MS = 60000;
 const DEFAULT_SETTINGS = {
   eventLimit: 24,
   timeoutMs: 1200,
@@ -27,6 +30,7 @@ const state = {
   blackboards: {},
   blackboardError: "",
   pinnedBlackboardKeys: loadPinnedBlackboardKeys(),
+  blackboardExpanded: false,
   events: [],
   eventsExpanded: false,
   selectedUid: null,
@@ -56,6 +60,7 @@ const els = {
   details: document.querySelector("#nodeDetails"),
   blackboard: document.querySelector("#blackboardView"),
   blackboardOpen: document.querySelector("#blackboardOpenButton"),
+  blackboardExpand: document.querySelector("#blackboardExpandButton"),
   blackboardRefresh: document.querySelector("#blackboardRefreshButton"),
   blackboardModalRefresh: document.querySelector("#blackboardModalRefreshButton"),
   blackboardOverlay: document.querySelector("#blackboardOverlay"),
@@ -346,6 +351,7 @@ function clearTreeState() {
   state.blackboardNames = [];
   state.blackboards = {};
   state.blackboardError = "";
+  state.blackboardExpanded = false;
   state.events = [];
   state.selectedUid = null;
   els.xmlPane.textContent = "";
@@ -356,6 +362,7 @@ function clearTreeState() {
   renderEvents();
   renderBlackboards();
   renderStatusStrip();
+  applyBlackboardExpandedState();
 }
 
 function disconnect() {
@@ -376,13 +383,27 @@ function updateDisconnectButton(enabled) {
   els.disconnect.textContent = state.demo ? "关闭示例" : "断开";
   els.blackboardRefresh.disabled = !enabled;
   els.blackboardOpen.disabled = !enabled;
+  els.blackboardExpand.disabled = !enabled;
   els.blackboardModalRefresh.disabled = !enabled;
 }
 
 function startPolling() {
   stopPolling();
   state.polling = true;
-  state.pollTimer = setInterval(pollRuntimeData, Number(els.interval.value));
+  state.pollTimer = setInterval(pollRuntimeData, getPollIntervalMs());
+}
+
+function getPollIntervalMs() {
+  return clampNumber(
+    els.interval.value,
+    MIN_POLL_INTERVAL_MS,
+    MAX_POLL_INTERVAL_MS,
+    DEFAULT_POLL_INTERVAL_MS,
+  );
+}
+
+function normalizePollIntervalInput() {
+  els.interval.value = String(getPollIntervalMs());
 }
 
 async function pollRuntimeData() {
@@ -479,6 +500,26 @@ function openBlackboardPanel() {
 
 function closeBlackboardPanel() {
   els.blackboardOverlay.hidden = true;
+}
+
+function setBlackboardExpanded(expanded) {
+  state.blackboardExpanded = expanded;
+  applyBlackboardExpandedState();
+  renderBlackboards();
+  if (expanded) {
+    showTab("tree");
+  }
+}
+
+function applyBlackboardExpandedState() {
+  document.body.classList.toggle("blackboard-expanded", state.blackboardExpanded);
+  els.blackboardExpand.classList.toggle("active", state.blackboardExpanded);
+  els.blackboardExpand.setAttribute("aria-pressed", String(state.blackboardExpanded));
+  els.blackboardExpand.setAttribute(
+    "aria-label",
+    state.blackboardExpanded ? "恢复黑板尺寸" : "放大黑板",
+  );
+  els.blackboardExpand.title = state.blackboardExpanded ? "恢复黑板尺寸" : "放大黑板";
 }
 
 function applySettingsFromForm() {
@@ -677,16 +718,20 @@ function renderBlackboards() {
     return;
   }
 
-  const pinnedPairs = pairs.filter((pair) => state.pinnedBlackboardKeys.has(pair.id));
+  const pinnedPairs = state.blackboardExpanded
+    ? pairs
+    : pairs.filter((pair) => state.pinnedBlackboardKeys.has(pair.id));
   if (!pinnedPairs.length) {
     els.blackboard.classList.add("muted");
-    els.blackboard.textContent = "未选择主页显示项。点击“全部”选择键值对。";
+    els.blackboard.textContent = state.blackboardExpanded
+      ? "当前黑板没有可显示项。"
+      : "未选择主页显示项。点击“全部”选择键值对。";
     return;
   }
 
   els.blackboard.classList.remove("muted");
   els.blackboard.innerHTML = pinnedPairs
-    .map((pair) => renderPinnedBlackboardPair(pair))
+    .map((pair) => renderBlackboardPanelPair(pair, state.blackboardExpanded))
     .join("");
 }
 
@@ -756,14 +801,14 @@ function renderBlackboardNames() {
   `;
 }
 
-function renderPinnedBlackboardPair(pair) {
+function renderBlackboardPanelPair(pair, expanded = false) {
   return `
-    <div class="blackboard-pin">
+    <div class="blackboard-pin${expanded ? " expanded" : ""}">
       <div class="blackboard-pin-head">
         <strong>${escapeHtml(pair.key)}</strong>
         <span>${escapeHtml(pair.boardName)}</span>
       </div>
-      ${renderBlackboardValue(pair.value, "compact")}
+      ${renderBlackboardValue(pair.value, expanded ? "expanded" : "compact")}
     </div>
   `;
 }
@@ -907,6 +952,10 @@ document.addEventListener("keydown", (event) => {
 
 els.blackboardOpen.addEventListener("click", openBlackboardPanel);
 
+els.blackboardExpand.addEventListener("click", () => {
+  setBlackboardExpanded(!state.blackboardExpanded);
+});
+
 els.blackboardClose.addEventListener("click", closeBlackboardPanel);
 
 els.blackboardRefresh.addEventListener("click", () => {
@@ -953,6 +1002,7 @@ els.treePane.addEventListener("click", (event) => {
 });
 
 els.interval.addEventListener("change", () => {
+  normalizePollIntervalInput();
   if (state.polling) {
     startPolling();
   }

@@ -31,11 +31,19 @@
           </label>
           <label class="interval-field">
             <span>轮询</span>
-            <select id="intervalInput">
-              <option value="250">250 ms</option>
-              <option value="500" selected>500 ms</option>
-              <option value="1000">1 s</option>
-            </select>
+            <span class="number-with-unit">
+              <input
+                id="intervalInput"
+                name="interval"
+                type="number"
+                min="50"
+                max="60000"
+                step="50"
+                value="500"
+                inputmode="numeric"
+              />
+              <span>ms</span>
+            </span>
           </label>
           <button type="submit" class="primary">连接</button>
           <button type="button" id="demoButton">示例</button>
@@ -71,21 +79,30 @@
         </section>
 
         <aside class="inspector">
-          <section class="panel">
+          <section class="panel node-details-panel">
             <h2>节点详情</h2>
             <div id="nodeDetails" class="details muted">未选择节点</div>
           </section>
-          <section class="panel">
+          <section class="panel blackboard-section">
             <div class="panel-head">
               <h2>黑板</h2>
               <div class="panel-actions">
                 <button id="blackboardOpenButton" type="button" disabled>全部</button>
+                <button
+                  id="blackboardExpandButton"
+                  class="icon-button"
+                  type="button"
+                  aria-label="放大黑板"
+                  aria-pressed="false"
+                  title="放大黑板"
+                  disabled
+                >⛶</button>
                 <button id="blackboardRefreshButton" type="button" disabled>刷新</button>
               </div>
             </div>
             <div id="blackboardView" class="blackboard-view muted">未连接黑板</div>
           </section>
-          <section class="panel">
+          <section class="panel event-panel">
             <div class="panel-head">
               <h2>运行事件</h2>
               <button
