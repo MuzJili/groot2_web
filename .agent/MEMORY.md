@@ -338,3 +338,132 @@ decisions, verification, and remaining risk.
   - Passed `git diff --check` for `.agent/TODO.md` and `.agent/MEMORY.md`.
   - No runtime verification was run because this was a documentation-only
     planning update.
+
+## 2026-05-07 - Add Tree Search Focus And Collapse
+
+- Intent: complete the first-batch tree navigation item by adding node search,
+  result focusing, selected-node focusing, and subtree collapse/expand controls.
+- Files changed:
+  - `static/index.html`
+  - `static/app.js`
+  - `static/styles.css`
+  - `README.md`
+  - `README_en.md`
+  - `.agent/TODO.md`
+  - `.agent/KNOWLEDGE.md`
+  - `.agent/MEMORY.md`
+- Decisions:
+  - Added a compact tree toolbar to the viewer header instead of adding a new
+    sidebar panel, keeping the tree controls close to the rendered tree.
+  - Search matches node names, tags, UIDs, paths, and XML attributes, including
+    port names and values.
+  - Search result activation selects the node, reveals collapsed ancestors, and
+    centers the node in the tree pane.
+  - Subtree collapse is UI-only: it changes visible nodes and edges but does
+    not mutate the raw XML or affect Groot2 status/blackboard polling.
+  - Added selected-node focus, selected-subtree collapse/expand, and expand-all
+    controls.
+- Verification:
+  - Passed `node --check` for `groot2_web/static/app.js`.
+  - Passed Python compile check for `groot2_web/server.py`.
+  - Passed `git diff --check`.
+  - Started `python3 -B server.py --bind 127.0.0.1 --port 8765`.
+  - Ran a headless Chrome DevTools Protocol interaction test against demo mode:
+    loaded the demo tree, searched `Fallback`, verified `1/1`, verified the
+    selected node, collapsed it from 8 visible nodes to 6 visible nodes,
+    expanded all back to 8 visible nodes, searched `Pub`, moved to the second
+    result, verified `PubNav2Goal` was selected, and clicked focus.
+  - Stopped the temporary server and headless Chrome process after verification.
+  - Passed targeted privacy scan over `groot2_web`, including hidden `.agent/`
+    files and excluding `.git/`.
+
+## 2026-05-07 - Fix Tree Toolbar And Expanded Blackboard Layout
+
+- Intent: fix the newly added tree navigation UI after maintainer feedback.
+- Files changed:
+  - `static/index.html`
+  - `static/app.js`
+  - `static/styles.css`
+  - `.agent/TODO.md`
+  - `.agent/KNOWLEDGE.md`
+  - `.agent/MEMORY.md`
+- Decisions:
+  - Moved the tree search/focus/collapse toolbar out of the tree header and
+    into a dedicated inspector panel above node details to avoid overlap with
+    status pills and view/XML controls.
+  - Enlarged the node-card collapse mark and made clicks on that mark toggle
+    the node's subtree directly.
+  - Changed blackboard expanded mode to keep the right inspector visible with
+    tree tools, node details, the enlarged blackboard, and runtime events
+    instead of hiding node details and events.
+- Verification:
+  - Passed `node --check` for `groot2_web/static/app.js`.
+  - Passed Python compile check for `groot2_web/server.py`.
+  - Passed `git diff --check`.
+  - Started a temporary server on `127.0.0.1:8766` because `8765` was already
+    in use.
+  - Ran a headless Chrome DevTools Protocol interaction test against demo mode:
+    verified the tree tools panel appears before node details, verified the
+    search input is no longer inside the tree header, searched `Fallback`,
+    clicked the selected node's collapse mark, confirmed it was 26x26 px,
+    confirmed visible nodes collapsed from 8 to 6, opened blackboard expanded
+    mode, and confirmed tree tools, node details, and runtime events all remain
+    displayed.
+  - Stopped the temporary server and headless Chrome process after verification.
+  - Passed targeted privacy scan over `groot2_web`, including hidden `.agent/`
+    files and excluding `.git/`.
+
+## 2026-05-07 - Fix Blackboard Expanded Three Column Layout
+
+- Intent: fix blackboard expanded mode so it creates a standalone enlarged
+  blackboard column instead of enlarging the entire right-side tool column.
+- Files changed:
+  - `static/styles.css`
+  - `.agent/TODO.md`
+  - `.agent/KNOWLEDGE.md`
+  - `.agent/MEMORY.md`
+- Decisions:
+  - Expanded mode now uses three workspace columns: behavior tree, standalone
+    blackboard, and right-side tools/details/events.
+  - Used `display: contents` on the inspector only in expanded desktop layout
+    so its child panels can participate directly in the outer workspace grid.
+  - Kept the small-screen layout stacked to avoid forcing cramped three-column
+    rendering on narrow viewports.
+- Verification:
+  - Passed `node --check` for `groot2_web/static/app.js`.
+  - Passed Python compile check for `groot2_web/server.py`.
+  - Passed `git diff --check`.
+  - Started a temporary server on `127.0.0.1:8766`.
+  - Ran a headless Chrome DevTools Protocol layout test at 1600x900 against
+    demo mode: opened blackboard expanded mode, confirmed the behavior tree was
+    the left column, the blackboard was the middle column, and tree tools/node
+    details/runtime events were the right column. Also confirmed the blackboard
+    height matched the tree height and right-side panels remained displayed.
+  - Stopped the temporary server and headless Chrome process after verification.
+  - Passed targeted privacy scan over `groot2_web`, including hidden `.agent/`
+    files and excluding `.git/`.
+
+## 2026-05-07 - Fix Viewer Tab Wrapping In Expanded Mode
+
+- Intent: keep the `视图` and `XML` tabs stable after blackboard expanded mode
+  narrows the behavior-tree column.
+- Files changed:
+  - `static/styles.css`
+  - `.agent/TODO.md`
+  - `.agent/MEMORY.md`
+- Decisions:
+  - Made the status strip the flexible part of the tree header.
+  - Made the tab group and each tab button non-shrinking with fixed 58px
+    width, 32px height, and `white-space: nowrap`.
+- Verification:
+  - Passed `node --check` for `groot2_web/static/app.js`.
+  - Passed Python compile check for `groot2_web/server.py`.
+  - Passed `git diff --check`.
+  - Started a temporary server on `127.0.0.1:8766`.
+  - Ran a headless Chrome DevTools Protocol layout test at 1600x900 against
+    demo mode: captured the `视图` and `XML` tab button sizes before and after
+    blackboard expanded mode, confirmed both stayed 58x32 px, confirmed
+    `white-space: nowrap`, and confirmed the labels did not vertically wrap.
+  - Stopped the temporary server and headless Chrome process after verification.
+  - Passed targeted privacy scan over `groot2_web`, including hidden `.agent/`
+    files and excluding `.git/`.

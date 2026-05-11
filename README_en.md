@@ -28,6 +28,7 @@ The web page can show:
 - Blackboard values
 - Recent status changes
 - Raw XML
+- Node search, focus, and subtree collapse
 
 This tool is read-only. It can read blackboards, but it does not edit
 blackboards, insert breakpoints, or control tree execution.

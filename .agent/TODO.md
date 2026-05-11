@@ -34,6 +34,8 @@
 - Added a millisecond polling interval input, scrollable sidebar blackboard
   values, and a blackboard split-view mode that gives the tree and blackboard
   equal workspace columns.
+- Added node search, search-result navigation, selected-node focus, selected
+  subtree collapse/expand, and expand-all tree controls.
 
 ## Open Items
 
@@ -52,7 +54,6 @@
 
 - Timeline replay.
 - Active path and failure-chain highlighting.
-- Search, focus, and subtree collapse.
 
 ### Second Batch
 
@@ -68,6 +69,14 @@
 
 ## Last Sync
 
+- 2026-05-07: fixed view/XML tab buttons so blackboard expanded mode cannot
+  shrink them or wrap their labels.
+- 2026-05-07: fixed blackboard expanded mode to use three columns: behavior
+  tree, standalone blackboard, and right-side tools/details/events.
+- 2026-05-07: moved tree search controls above node details, made node-card
+  collapse marks clickable, and kept node details/runtime events visible in
+  blackboard expanded mode.
+- 2026-05-07: completed search/focus/collapse controls for the tree viewer.
 - 2026-05-07: recorded the staged feature roadmap for timeline replay,
   active-path/failure highlighting, search/focus/collapse, blackboard
   diff/watch, diagnostics, tactical HUD, minimap, failure heatmap, and

@@ -79,6 +79,66 @@
         </section>
 
         <aside class="inspector">
+          <section class="panel tree-tools-panel">
+            <div class="panel-head">
+              <h2>树工具</h2>
+              <span id="treeSearchCount" class="tree-search-count">0/0</span>
+            </div>
+            <div class="tree-tools" aria-label="行为树工具">
+              <label class="tree-search-field">
+                <span>搜索</span>
+                <input
+                  id="treeSearchInput"
+                  type="search"
+                  placeholder="节点 / uid / port"
+                  autocomplete="off"
+                  disabled
+                />
+              </label>
+              <div class="tree-tool-buttons">
+                <button
+                  id="searchPrevButton"
+                  class="icon-button"
+                  type="button"
+                  aria-label="上一个搜索结果"
+                  title="上一个搜索结果"
+                  disabled
+                >↑</button>
+                <button
+                  id="searchNextButton"
+                  class="icon-button"
+                  type="button"
+                  aria-label="下一个搜索结果"
+                  title="下一个搜索结果"
+                  disabled
+                >↓</button>
+                <button
+                  id="focusSelectedButton"
+                  class="icon-button"
+                  type="button"
+                  aria-label="聚焦当前节点"
+                  title="聚焦当前节点"
+                  disabled
+                >⌖</button>
+                <button
+                  id="collapseSelectedButton"
+                  class="icon-button"
+                  type="button"
+                  aria-label="折叠当前子树"
+                  title="折叠当前子树"
+                  disabled
+                >−</button>
+                <button
+                  id="expandAllButton"
+                  class="icon-button"
+                  type="button"
+                  aria-label="展开全部子树"
+                  title="展开全部子树"
+                  disabled
+                >□</button>
+              </div>
+            </div>
+          </section>
           <section class="panel node-details-panel">
             <h2>节点详情</h2>
             <div id="nodeDetails" class="details muted">未选择节点</div>

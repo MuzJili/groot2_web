@@ -61,11 +61,18 @@ BT::Groot2Publisher
   `全部` button opens the full blackboard value picker, and pinned pair IDs are
   stored in browser `localStorage` under `groot2_web_pinned_blackboard_keys`.
 - The sidebar blackboard panel has a magnify button next to `全部`. When active,
-  the main workspace becomes a tree/blackboard split view with equal columns,
-  the blackboard side shows all exported pairs, and the blackboard list itself
-  scrolls vertically.
+  the main workspace becomes three columns: behavior tree on the left, an
+  enlarged standalone blackboard column in the middle, and tree tools/node
+  details/runtime events on the right. The blackboard shows all exported pairs
+  and scrolls vertically.
 - The topbar polling control is a numeric input in milliseconds. The frontend
   clamps it to 50-60000 ms before restarting the runtime polling timer.
+- The right inspector includes tree search/focus/collapse controls above the
+  node details panel. Search matches node names, tags, UIDs, paths, and XML
+  attributes. Activating a match selects it, expands its ancestors, and centers
+  it in the tree pane. The selected node can be focused, collapsed/expanded if
+  it has children, and the whole tree can be expanded again with the expand-all
+  control. The node card's top-right collapse mark is also clickable.
 - Runtime events are collapsed to the latest 3 items by default. The triangle
   button expands the event log to the configured event history length, with the
   panel itself scrollable.

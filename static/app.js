@@ -24,6 +24,7 @@ const state = {
   xml: "",
   tree: null,
   nodes: [],
+  visibleNodes: [],
   nodeByUid: new Map(),
   statusByUid: new Map(),
   blackboardNames: [],
@@ -31,6 +32,11 @@ const state = {
   blackboardError: "",
   pinnedBlackboardKeys: loadPinnedBlackboardKeys(),
   blackboardExpanded: false,
+  collapsedNodeIds: new Set(),
+  searchQuery: "",
+  searchMatches: [],
+  searchMatchIds: new Set(),
+  searchMatchIndex: -1,
   events: [],
   eventsExpanded: false,
   selectedUid: null,
@@ -53,6 +59,13 @@ const els = {
   treeCanvas: document.querySelector("#treeCanvas"),
   edgeLayer: document.querySelector("#edgeLayer"),
   nodeLayer: document.querySelector("#nodeLayer"),
+  treeSearch: document.querySelector("#treeSearchInput"),
+  treeSearchCount: document.querySelector("#treeSearchCount"),
+  searchPrev: document.querySelector("#searchPrevButton"),
+  searchNext: document.querySelector("#searchNextButton"),
+  focusSelected: document.querySelector("#focusSelectedButton"),
+  collapseSelected: document.querySelector("#collapseSelectedButton"),
+  expandAll: document.querySelector("#expandAllButton"),
   treeTab: document.querySelector("#treeTab"),
   xmlTab: document.querySelector("#xmlTab"),
   treePane: document.querySelector("#treePane"),
@@ -216,29 +229,44 @@ function flattenTree(root) {
   return out;
 }
 
-function layoutTree(root) {
+function nodeId(node) {
+  return node.uid ?? node.syntheticId;
+}
+
+function isNodeCollapsed(node) {
+  return state.collapsedNodeIds.has(nodeId(node));
+}
+
+function visibleChildren(node) {
+  return isNodeCollapsed(node) ? [] : node.children;
+}
+
+function layoutVisibleTree(root) {
   let leafCursor = 0;
+  const visibleNodes = [];
   const walk = (node, depth) => {
+    visibleNodes.push(node);
     node.depth = depth;
     node.y = MARGIN_Y + depth * LEVEL_GAP;
-    if (!node.children.length) {
+    const children = visibleChildren(node);
+    if (!children.length) {
       node.x = MARGIN_X + leafCursor * LEAF_GAP;
       leafCursor += 1;
       return node.x;
     }
-    const childXs = node.children.map((child) => walk(child, depth + 1));
+    const childXs = children.map((child) => walk(child, depth + 1));
     node.x = (childXs[0] + childXs[childXs.length - 1]) / 2;
     return node.x;
   };
   walk(root, 0);
 
-  const nodes = flattenTree(root);
-  const minX = Math.min(...nodes.map((node) => node.x));
+  const minX = Math.min(...visibleNodes.map((node) => node.x));
   if (minX < MARGIN_X) {
-    nodes.forEach((node) => {
+    visibleNodes.forEach((node) => {
       node.x += MARGIN_X - minX;
     });
   }
+  return visibleNodes;
 }
 
 function parseXml(xmlText) {
@@ -253,7 +281,6 @@ function parseXml(xmlText) {
     throw new Error("BehaviorTree 没有根节点");
   }
   const rootNode = buildTreeFromElement(roots[0]);
-  layoutTree(rootNode);
   return rootNode;
 }
 
@@ -273,6 +300,55 @@ function extractBlackboardNames(xmlText) {
     }
   });
   return names;
+}
+
+function findNodeById(id) {
+  return state.nodes.find((node) => nodeId(node) === id) || null;
+}
+
+function selectedNode() {
+  return state.selectedUid === null ? null : findNodeById(state.selectedUid);
+}
+
+function nodeSearchText(node) {
+  const parts = [
+    node.name,
+    node.tag,
+    node.path,
+    node.uid === null ? "" : `uid ${node.uid} uid:${node.uid}`,
+  ];
+  node.attrs.forEach((attr) => {
+    parts.push(attr.name, attr.value);
+  });
+  return parts.join(" ").toLowerCase();
+}
+
+function matchNodeSearch(node, terms) {
+  if (!terms.length) {
+    return false;
+  }
+  const text = nodeSearchText(node);
+  return terms.every((term) => text.includes(term));
+}
+
+function revealAncestors(node) {
+  let current = node.parent;
+  while (current) {
+    state.collapsedNodeIds.delete(nodeId(current));
+    current = current.parent;
+  }
+}
+
+function focusNode(node) {
+  if (!node) {
+    return;
+  }
+  showTab("tree");
+  requestAnimationFrame(() => {
+    const left = Math.max(0, node.x + NODE_WIDTH / 2 - els.treePane.clientWidth / 2);
+    const top = Math.max(0, node.y + NODE_HEIGHT / 2 - els.treePane.clientHeight / 2);
+    els.treePane.scrollTo({ left, top, behavior: "smooth" });
+  });
 }
 
 function apiUrl(path, extraParams = {}) {
@@ -322,6 +398,8 @@ async function connect() {
   renderDetails();
   renderEvents();
   renderBlackboards();
+  renderSearchState();
+  updateTreeToolState();
   setConnection(`${state.demo ? "demo" : state.host}:${state.port}`);
   updateDisconnectButton(true);
   await pollRuntimeData();
@@ -341,19 +419,33 @@ function stopPolling() {
   }
 }
 
+function resetSearchState(clearInput = false) {
+  state.searchQuery = "";
+  state.searchMatches = [];
+  state.searchMatchIds = new Set();
+  state.searchMatchIndex = -1;
+  if (clearInput) {
+    els.treeSearch.value = "";
+  }
+  renderSearchState();
+}
+
 function clearTreeState() {
   stopPolling();
   state.xml = "";
   state.tree = null;
   state.nodes = [];
+  state.visibleNodes = [];
   state.nodeByUid = new Map();
   state.statusByUid = new Map();
   state.blackboardNames = [];
   state.blackboards = {};
   state.blackboardError = "";
   state.blackboardExpanded = false;
+  state.collapsedNodeIds = new Set();
   state.events = [];
   state.selectedUid = null;
+  resetSearchState(true);
   els.xmlPane.textContent = "";
   els.edgeLayer.innerHTML = "";
   els.nodeLayer.innerHTML = "";
@@ -363,6 +455,7 @@ function clearTreeState() {
   renderBlackboards();
   renderStatusStrip();
   applyBlackboardExpandedState();
+  updateTreeToolState();
 }
 
 function disconnect() {
@@ -544,10 +637,12 @@ function clearSelectedNode() {
   state.selectedUid = null;
   updateRenderedStatuses();
   renderDetails();
+  updateTreeToolState();
 }
 
 function renderTree() {
   if (!state.tree) {
+    state.visibleNodes = [];
     els.empty.hidden = false;
     els.treeCanvas.hidden = true;
     return;
@@ -555,8 +650,9 @@ function renderTree() {
   els.empty.hidden = true;
   els.treeCanvas.hidden = false;
 
-  const maxX = Math.max(...state.nodes.map((node) => node.x)) + NODE_WIDTH + MARGIN_X;
-  const maxY = Math.max(...state.nodes.map((node) => node.y)) + NODE_HEIGHT + MARGIN_Y;
+  state.visibleNodes = layoutVisibleTree(state.tree);
+  const maxX = Math.max(...state.visibleNodes.map((node) => node.x)) + NODE_WIDTH + MARGIN_X;
+  const maxY = Math.max(...state.visibleNodes.map((node) => node.y)) + NODE_HEIGHT + MARGIN_Y;
   els.treeCanvas.style.width = `${maxX}px`;
   els.treeCanvas.style.height = `${maxY}px`;
   els.edgeLayer.setAttribute("width", maxX);
@@ -565,7 +661,7 @@ function renderTree() {
 
   const edges = [];
   const collectEdges = (node) => {
-    node.children.forEach((child) => {
+    visibleChildren(node).forEach((child) => {
       edges.push(edgePath(node, child));
       collectEdges(child);
     });
@@ -574,27 +670,37 @@ function renderTree() {
   els.edgeLayer.innerHTML = edges.join("");
   els.nodeLayer.innerHTML = "";
 
-  state.nodes.forEach((node) => {
+  state.visibleNodes.forEach((node) => {
     const el = document.createElement("button");
     el.type = "button";
     el.className = nodeClassName(node);
-    el.dataset.uid = node.uid ?? node.syntheticId;
+    el.dataset.nodeId = String(nodeId(node));
     el.style.left = `${node.x}px`;
     el.style.top = `${node.y}px`;
+    const collapsed = isNodeCollapsed(node);
     el.innerHTML = `
       <span class="node-title">${escapeHtml(node.name)}</span>
       <span class="node-meta">${escapeHtml(node.tag)}${node.uid !== null ? ` · uid ${node.uid}` : ""}</span>
       <span class="node-status">${escapeHtml(statusLabel[getStatus(node)] || getStatus(node))}</span>
+      ${
+        node.children.length
+          ? `<span class="node-collapse-mark" title="${collapsed ? "展开子树" : "折叠子树"}">${collapsed ? "+" : "−"}</span>`
+          : ""
+      }
     `;
     el.addEventListener("click", (event) => {
       event.stopPropagation();
-      state.selectedUid = node.uid ?? node.syntheticId;
-      updateRenderedStatuses();
-      renderDetails(node);
+      if (event.target.closest(".node-collapse-mark")) {
+        selectNode(node);
+        toggleSelectedCollapse();
+        return;
+      }
+      selectNode(node);
     });
     els.nodeLayer.appendChild(el);
   });
   renderStatusStrip();
+  updateTreeToolState();
 }
 
 function edgePath(parent, child) {
@@ -615,21 +721,191 @@ function getStatus(node) {
 
 function nodeClassName(node) {
   const status = getStatus(node);
-  const selected = state.selectedUid === (node.uid ?? node.syntheticId);
-  return `bt-node status-${slugStatus(status)}${selected ? " selected" : ""}`;
+  const id = nodeId(node);
+  const selected = state.selectedUid === id;
+  const searchMatch = state.searchMatchIds.has(id);
+  const currentSearch =
+    state.searchMatchIndex >= 0 && state.searchMatches[state.searchMatchIndex] === node;
+  return [
+    "bt-node",
+    `status-${slugStatus(status)}`,
+    selected ? "selected" : "",
+    searchMatch ? "search-match" : "",
+    currentSearch ? "search-current" : "",
+    isNodeCollapsed(node) ? "collapsed" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function updateRenderedStatuses() {
   Array.from(els.nodeLayer.children).forEach((el, index) => {
-    const node = state.nodes[index];
+    const node = state.visibleNodes[index];
+    if (!node) {
+      return;
+    }
     el.className = nodeClassName(node);
     const statusEl = el.querySelector(".node-status");
     const status = getStatus(node);
     statusEl.textContent = statusLabel[status] || status;
   });
   if (state.selectedUid !== null) {
-    const node = state.nodes.find((item) => (item.uid ?? item.syntheticId) === state.selectedUid);
+    const node = findNodeById(state.selectedUid);
     renderDetails(node);
+  }
+  updateTreeToolState();
+}
+
+function selectNode(node, shouldFocus = false) {
+  if (!node) {
+    return;
+  }
+  state.selectedUid = nodeId(node);
+  syncSearchIndexToNode(node);
+  updateRenderedStatuses();
+  renderDetails(node);
+  updateTreeToolState();
+  if (shouldFocus) {
+    focusNode(node);
+  }
+}
+
+function searchTerms() {
+  return state.searchQuery
+    .toLowerCase()
+    .split(/\s+/)
+    .map((term) => term.trim())
+    .filter(Boolean);
+}
+
+function updateSearchMatches(shouldFocusFirst = false) {
+  state.searchQuery = els.treeSearch.value.trim();
+  const terms = searchTerms();
+  state.searchMatches = terms.length
+    ? state.nodes.filter((node) => matchNodeSearch(node, terms))
+    : [];
+  state.searchMatchIds = new Set(state.searchMatches.map((node) => nodeId(node)));
+  state.searchMatchIndex = state.searchMatches.length ? 0 : -1;
+  renderSearchState();
+  if (shouldFocusFirst && state.searchMatches.length) {
+    activateSearchMatch(state.searchMatchIndex);
+    return;
+  }
+  renderTree();
+  updateTreeToolState();
+}
+
+function syncSearchIndexToNode(node) {
+  if (!state.searchMatches.length) {
+    return;
+  }
+  const index = state.searchMatches.findIndex((match) => nodeId(match) === nodeId(node));
+  if (index >= 0) {
+    state.searchMatchIndex = index;
+    renderSearchState();
+  }
+}
+
+function activateSearchMatch(index) {
+  if (!state.searchMatches.length) {
+    return;
+  }
+  const nextIndex =
+    (index + state.searchMatches.length) % state.searchMatches.length;
+  state.searchMatchIndex = nextIndex;
+  const node = state.searchMatches[nextIndex];
+  state.selectedUid = nodeId(node);
+  revealAncestors(node);
+  renderSearchState();
+  renderTree();
+  renderDetails(node);
+  updateTreeToolState();
+  focusNode(node);
+}
+
+function moveSearchMatch(step) {
+  if (!state.searchMatches.length) {
+    return;
+  }
+  activateSearchMatch(state.searchMatchIndex + step);
+}
+
+function clearSearch() {
+  els.treeSearch.value = "";
+  resetSearchState();
+  renderTree();
+  updateTreeToolState();
+}
+
+function renderSearchState() {
+  if (!els.treeSearchCount) {
+    return;
+  }
+  const hasQuery = Boolean(state.searchQuery);
+  const matchCount = state.searchMatches.length;
+  const current = hasQuery && matchCount ? state.searchMatchIndex + 1 : 0;
+  els.treeSearchCount.textContent = `${current}/${matchCount}`;
+  els.treeSearchCount.classList.toggle("empty", hasQuery && matchCount === 0);
+}
+
+function updateTreeToolState() {
+  const hasTree = Boolean(state.tree);
+  const node = selectedNode();
+  const canCollapse = Boolean(node && node.children.length);
+  const nodeCollapsed = Boolean(node && isNodeCollapsed(node));
+
+  els.treeSearch.disabled = !hasTree;
+  els.searchPrev.disabled = !hasTree || state.searchMatches.length < 2;
+  els.searchNext.disabled = !hasTree || state.searchMatches.length < 2;
+  els.focusSelected.disabled = !hasTree || !node;
+  els.collapseSelected.disabled = !hasTree || !canCollapse;
+  els.expandAll.disabled = !hasTree || state.collapsedNodeIds.size === 0;
+
+  els.collapseSelected.textContent = nodeCollapsed ? "+" : "−";
+  els.collapseSelected.setAttribute(
+    "aria-label",
+    nodeCollapsed ? "展开当前子树" : "折叠当前子树",
+  );
+  els.collapseSelected.title = nodeCollapsed ? "展开当前子树" : "折叠当前子树";
+}
+
+function focusSelectedNode() {
+  const node = selectedNode();
+  if (!node) {
+    return;
+  }
+  revealAncestors(node);
+  renderTree();
+  selectNode(node, true);
+}
+
+function toggleSelectedCollapse() {
+  const node = selectedNode();
+  if (!node || !node.children.length) {
+    return;
+  }
+  const id = nodeId(node);
+  if (state.collapsedNodeIds.has(id)) {
+    state.collapsedNodeIds.delete(id);
+  } else {
+    state.collapsedNodeIds.add(id);
+  }
+  renderTree();
+  renderDetails(node);
+  updateTreeToolState();
+  focusNode(node);
+}
+
+function expandAllSubtrees() {
+  if (!state.collapsedNodeIds.size) {
+    return;
+  }
+  state.collapsedNodeIds.clear();
+  renderTree();
+  updateTreeToolState();
+  const node = selectedNode();
+  if (node) {
+    focusNode(node);
   }
 }
 
@@ -686,6 +962,9 @@ function renderDetails(node = null) {
     ["路径", node.path || "无"],
     ["子节点", String(node.children.length)],
   ];
+  if (node.children.length) {
+    rows.push(["子树", isNodeCollapsed(node) ? "已折叠" : "已展开"]);
+  }
   node.attrs
     .filter((attr) => !["_uid", "_fullPath", "_fullpath"].includes(attr.name))
     .forEach((attr) => rows.push([attr.name, attr.value]));
@@ -995,6 +1274,34 @@ els.eventToggle.addEventListener("click", () => {
   renderEvents();
 });
 
+els.treeSearch.addEventListener("input", () => {
+  updateSearchMatches(true);
+});
+
+els.treeSearch.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    moveSearchMatch(event.shiftKey ? -1 : 1);
+  } else if (event.key === "Escape" && els.treeSearch.value) {
+    event.preventDefault();
+    clearSearch();
+  }
+});
+
+els.searchPrev.addEventListener("click", () => {
+  moveSearchMatch(-1);
+});
+
+els.searchNext.addEventListener("click", () => {
+  moveSearchMatch(1);
+});
+
+els.focusSelected.addEventListener("click", focusSelectedNode);
+
+els.collapseSelected.addEventListener("click", toggleSelectedCollapse);
+
+els.expandAll.addEventListener("click", expandAllSubtrees);
+
 els.treePane.addEventListener("click", (event) => {
   if (!event.target.closest(".bt-node")) {
     clearSelectedNode();
@@ -1012,3 +1319,5 @@ els.treeTab.addEventListener("click", () => showTab("tree"));
 els.xmlTab.addEventListener("click", () => showTab("xml"));
 
 renderStatusStrip();
+renderSearchState();
+updateTreeToolState();
