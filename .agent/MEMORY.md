@@ -467,3 +467,41 @@ decisions, verification, and remaining risk.
   - Stopped the temporary server and headless Chrome process after verification.
   - Passed targeted privacy scan over `groot2_web`, including hidden `.agent/`
     files and excluding `.git/`.
+
+## 2026-05-12 - Fix Blackboard JSON Parse Errors
+
+- Intent: fix the blackboard panel error where the browser displayed
+  `JSON.parse: unexpected character...` for real Groot2 blackboard requests,
+  including cases showing `test_check_target_in_region` as the requested
+  blackboard name.
+- Files changed:
+  - `server.py`
+  - `static/app.js`
+  - `.agent/KNOWLEDGE.md`
+  - `.agent/TODO.md`
+  - `.agent/TROUBLESHOOTING.md`
+  - `.agent/MEMORY.md`
+- Decisions:
+  - Added backend JSON normalization before every HTTP JSON response so decoded
+    msgpack blackboard values containing bytes, binary blobs, non-string map
+    keys, or non-finite floats no longer make `json.dumps` fail.
+  - Non-UTF-8 binary values are returned as small base64 metadata objects,
+    while UTF-8 bytes become strings.
+  - Changed frontend `fetchJson()` to parse response text manually and report a
+    readable non-JSON server response instead of surfacing the browser's raw
+    `JSON.parse` exception.
+  - Documented the symptom and fix in troubleshooting memory.
+- Verification:
+  - Passed `PYTHONPYCACHEPREFIX=/tmp/groot2_web_pycache python3 -m py_compile server.py`.
+  - Passed `node --check static/app.js`.
+  - Passed `git diff --check`.
+  - Ran a direct `_json_bytes()` serialization check covering UTF-8 bytes,
+    binary bytes, non-string keys, and `NaN`.
+  - Started a local server on `127.0.0.1:8766` because Docker was already
+    listening on `8765`.
+  - Verified `/api/health`, `/api/fulltree?demo=1`, and
+    `/api/blackboard?demo=1&blackboards=test_check_target_in_region` all return
+    valid JSON.
+- Follow-up:
+  - Runtime-test the same path against the real `BT::Groot2Publisher` blackboard
+    payload inside the target Docker/container setup.

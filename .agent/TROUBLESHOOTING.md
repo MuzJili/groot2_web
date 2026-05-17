@@ -110,6 +110,34 @@ If tree XML and node status work but the blackboard panel is empty:
 Groot2's `BLACKBOARD` request returns only values that BehaviorTree.CPP can
 export to JSON.
 
+## Blackboard Shows A JSON.parse Error
+
+Symptom:
+
+```text
+JSON.parse: unexpected character at line 1 column ... of the JSON data
+```
+
+The blackboard panel may still show the requested blackboard name, for example
+`test_check_target_in_region`.
+
+Cause:
+
+```text
+The frontend expected `/api/blackboard` to return JSON, but the backend returned
+a non-JSON error response. One known trigger is a msgpack blackboard payload that
+contains values Python's `json.dumps` cannot serialize directly, such as bytes,
+binary blobs, non-string map keys, or non-finite floats.
+```
+
+Fix:
+
+```text
+Keep backend blackboard payloads normalized through `_make_json_safe()` before
+sending HTTP JSON, and keep `fetchJson()` parsing via response text so non-JSON
+server failures become readable UI errors.
+```
+
 ## Empty State Text Remains After Tree Loads
 
 Symptom:

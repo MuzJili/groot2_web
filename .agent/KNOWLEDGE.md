@@ -32,6 +32,9 @@ BT::Groot2Publisher
 - `server.py` provides `/api/blackboard`.
 - `server.py` converts Groot2 status bytes into readable status names.
 - `server.py` decodes Groot2 blackboard replies from msgpack into JSON.
+- `server.py` normalizes decoded blackboard values into browser-safe JSON, so
+  bytes, binary blobs, non-string map keys, and non-finite floats do not break
+  `/api/blackboard` responses.
 - Demo data lives in `server.py` as `DEMO_XML`, `DEMO_STATUSES`, and
   `DEMO_BLACKBOARDS`.
 

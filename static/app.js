@@ -370,7 +370,19 @@ function apiUrl(path, extraParams = {}) {
 
 async function fetchJson(path, extraParams = {}) {
   const response = await fetch(apiUrl(path, extraParams), { cache: "no-store" });
-  const payload = await response.json();
+  const text = await response.text();
+  let payload;
+  try {
+    payload = text ? JSON.parse(text) : {};
+  } catch {
+    const snippet = text.trim().replace(/\s+/g, " ").slice(0, 180);
+    throw new Error(
+      `服务返回了非 JSON 响应 (${response.status})${snippet ? `: ${snippet}` : ""}`,
+    );
+  }
+  if (!response.ok) {
+    throw new Error(payload.error || `HTTP ${response.status}`);
+  }
   if (!payload.ok) {
     throw new Error(payload.error || "请求失败");
   }

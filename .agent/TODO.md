@@ -69,6 +69,8 @@
 
 ## Last Sync
 
+- 2026-05-12: fixed blackboard JSON serialization so non-JSON-safe msgpack
+  values no longer surface as browser `JSON.parse` errors.
 - 2026-05-07: fixed view/XML tab buttons so blackboard expanded mode cannot
   shrink them or wrap their labels.
 - 2026-05-07: fixed blackboard expanded mode to use three columns: behavior

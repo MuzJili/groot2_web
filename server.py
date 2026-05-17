@@ -9,7 +9,9 @@ native Groot2 protocol directly.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
+import math
 import random
 import socket
 import struct
@@ -92,7 +94,52 @@ class Groot2Error(RuntimeError):
 
 
 def _json_bytes(payload: dict[str, Any], status: HTTPStatus = HTTPStatus.OK) -> tuple[int, bytes]:
-    return int(status), json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    safe_payload = _make_json_safe(payload)
+    return (
+        int(status),
+        json.dumps(safe_payload, ensure_ascii=False, allow_nan=False).encode("utf-8"),
+    )
+
+
+def _make_json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else str(value)
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return _bytes_to_json(bytes(value))
+    if isinstance(value, dict):
+        return {_json_key(key): _make_json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_make_json_safe(item) for item in value]
+    if msgpack is not None and isinstance(value, msgpack.ExtType):  # type: ignore[union-attr]
+        return {
+            "type": "msgpack_ext",
+            "code": value.code,
+            "data": _bytes_to_json(value.data),
+        }
+    return str(value)
+
+
+def _json_key(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        text = _bytes_to_json(bytes(value))
+        return text if isinstance(text, str) else f"bytes:{text['value']}"
+    return str(value)
+
+
+def _bytes_to_json(value: bytes) -> str | dict[str, Any]:
+    try:
+        return value.decode("utf-8")
+    except UnicodeDecodeError:
+        return {
+            "type": "bytes",
+            "encoding": "base64",
+            "size": len(value),
+            "value": base64.b64encode(value).decode("ascii"),
+        }
 
 
 def _request_header(request_type: int) -> bytes:
